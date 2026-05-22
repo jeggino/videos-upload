@@ -31,7 +31,7 @@ def upload_page():
     st.header("Upload a new video")
 
     with st.form("upload_form", clear_on_submit=True):
-        file = st.file_uploader("Video file", type=["mp4", "mov", "avi", "mkv"])
+        file = st.file_uploader("Video file",max_upload_size=500, type=["mp4", "mov", "avi", "mkv"])
         name = st.text_input("Name (required)")
         observer = st.text_input("Observer (required)")
         observed_at = st.date_input("Observation date", dt.date.today())
