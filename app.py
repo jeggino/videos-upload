@@ -82,9 +82,10 @@ def upload_page():
             "description": description,
         }
         resp = supabase.table("video_observations").insert(data).execute()
-        if resp.error:
-            st.error(f"DB insert error: {resp.error.message}")
+        if not resp.data:
+            st.error("Insert failed")
             return
+
     except Exception as e:
         st.error(f"DB insert failed: {e}")
         return
