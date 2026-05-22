@@ -183,41 +183,41 @@ def browse_page():
         st.info("Video preview not available.")
 
     # -----------------------------
-    # EDIT METADATA (NO FORM)
+    # EDIT METADATA (INSIDE DROPDOWN)
     # -----------------------------
-    st.markdown("### Edit metadata")
+    with st.expander("Edit metadata", expanded=False):
 
-    observer = st.text_input("Observer", value=row["observer"])
-    observed_at = st.date_input(
-        "Observation date",
-        value=dt.date.fromisoformat(str(row["observed_at"])[:10]),
-    )
-    location = st.text_input("Location", value=row["location"])
-    project = st.text_input("Project", value=row["project"])
-    description = st.text_area(
-        "Description", value=row.get("description") or "", height=100
-    )
-
-    if st.button("Save changes"):
-        update_data = {
-            "observer": observer,
-            "observed_at": observed_at.isoformat(),
-            "location": location,
-            "project": project,
-            "description": description,
-        }
-
-        resp = (
-            supabase.table("video_observations")
-            .update(update_data)
-            .eq("id", selected_id)
-            .execute()
+        observer = st.text_input("Observer", value=row["observer"])
+        observed_at = st.date_input(
+            "Observation date",
+            value=dt.date.fromisoformat(str(row["observed_at"])[:10]),
+        )
+        location = st.text_input("Location", value=row["location"])
+        project = st.text_input("Project", value=row["project"])
+        description = st.text_area(
+            "Description", value=row.get("description") or "", height=100
         )
 
-        if resp.data is None:
-            st.error("Update failed.")
-        else:
-            st.success("Metadata updated. Refresh to see changes.")
+        if st.button("Save changes"):
+            update_data = {
+                "observer": observer,
+                "observed_at": observed_at.isoformat(),
+                "location": location,
+                "project": project,
+                "description": description,
+            }
+
+            resp = (
+                supabase.table("video_observations")
+                .update(update_data)
+                .eq("id", selected_id)
+                .execute()
+            )
+
+            if resp.data is None:
+                st.error("Update failed.")
+            else:
+                st.success("Metadata updated. Refresh to see changes.")
 
     # -----------------------------
     # DELETE VIDEO (SIMPLE & SAFE)
@@ -248,6 +248,7 @@ def browse_page():
                 st.error("Delete failed.")
             else:
                 st.success("Video and metadata deleted. Refresh to update list.")
+
 
 # ---------- ROUTER ----------
 
