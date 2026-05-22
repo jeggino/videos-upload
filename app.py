@@ -159,13 +159,13 @@ def browse_page():
         return
 
     # -----------------------------
-    # SELECT VIDEO BY NAME
+    # SELECT VIDEO BY NAME + PROJECT
     # -----------------------------
-    name_list = [f"{row['name']}  —  {row['file_name']}" for row in data]
-    name_to_row = {f"{row['name']}  —  {row['file_name']}": row for row in data}
+    select_labels = [f"{row['name']} — {row['project']}" for row in data]
+    label_to_row = {f"{row['name']} — {row['project']}": row for row in data}
 
-    selected_label = st.selectbox("Select a video", name_list)
-    row = name_to_row[selected_label]
+    selected_label = st.selectbox("Select a video", select_labels)
+    row = label_to_row[selected_label]
 
     # -----------------------------
     # VIDEO PREVIEW
@@ -218,24 +218,29 @@ def browse_page():
                 st.error("Update failed.")
             else:
                 st.success("Metadata updated.")
-                st.rerun()
+                st.rerun()   # 🔥 AUTO REFRESH
 
     # -----------------------------
-    # DELETE VIDEO
+    # DELETE VIDEO (RELIABLE VERSION)
     # -----------------------------
     st.markdown("---")
     st.markdown("### Delete this video")
 
     if st.button("Delete video"):
-        st.warning("This action is permanent. Click below to confirm.")
+        st.session_state["confirm_delete"] = True
+
+    if st.session_state.get("confirm_delete", False):
+        st.warning("This action is permanent. Click below to confirm deletion.")
 
         if st.button("YES, delete permanently"):
+            # Delete from storage
             try:
                 supabase.storage.from_(BUCKET_NAME).remove([row["storage_path"]])
             except Exception as e:
                 st.error(f"Storage delete failed: {e}")
                 return
 
+            # Delete DB row
             resp = (
                 supabase.table("video_observations")
                 .delete()
@@ -247,7 +252,9 @@ def browse_page():
                 st.error("Delete failed.")
             else:
                 st.success("Video deleted.")
-                st.rerun()
+                st.session_state["confirm_delete"] = False
+                st.rerun()   # 🔥 AUTO REFRESH
+
 
 
 # ---------- ROUTER ----------
