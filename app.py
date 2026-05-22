@@ -95,31 +95,6 @@ def upload_page():
 
 # ---------- BROWSE / MANAGE PAGE ----------
 
-def fetch_videos(filters: dict):
-    query = supabase.table("video_observations").select("*")
-
-    if filters.get("observer"):
-        query = query.ilike("observer", f"%{filters['observer']}%")
-    if filters.get("project"):
-        query = query.ilike("project", f"%{filters['project']}%")
-    if filters.get("date_from"):
-        query = query.gte("observed_at", filters["date_from"].isoformat())
-    if filters.get("date_to"):
-        query = query.lte("observed_at", filters["date_to"].isoformat())
-
-    resp = query.order("observed_at", desc=True).execute()
-    if resp.error:
-        st.error(f"Error fetching videos: {resp.error.message}")
-        return []
-    return resp.data or []
-
-
-def get_public_url(storage_path: str) -> str:
-    # Bucket is private but policies allow public; this returns a public URL
-    res = supabase.storage.from_(BUCKET_NAME).get_public_url(storage_path)
-    return res
-
-
 def browse_page():
     st.header("Browse & manage videos")
 
@@ -143,37 +118,33 @@ def browse_page():
             else:
                 date_from, date_to = None, None
 
-    filters = {
-        "observer": observer.strip() or None,
-        "project": project.strip() or None,
-        "date_from": date_from,
-        "date_to": date_to,
-    }
-
     # -----------------------------
-    # FETCH DATA
+    # BUILD QUERY
     # -----------------------------
     query = supabase.table("video_observations").select("*")
 
-    if filters["observer"]:
-        query = query.ilike("observer", f"%{filters['observer']}%")
+    if observer.strip():
+        query = query.ilike("observer", f"%{observer.strip()}%")
 
-    if filters["project"]:
-        query = query.ilike("project", f"%{filters['project']}%")
+    if project.strip():
+        query = query.ilike("project", f"%{project.strip()}%")
 
-    if filters["date_from"]:
-        query = query.gte("observed_at", filters["date_from"].isoformat())
+    if date_from:
+        query = query.gte("observed_at", date_from.isoformat())
 
-    if filters["date_to"]:
-        query = query.lte("observed_at", filters["date_to"].isoformat())
+    if date_to:
+        query = query.lte("observed_at", date_to.isoformat())
 
+    # -----------------------------
+    # EXECUTE QUERY
+    # -----------------------------
     resp = query.order("observed_at", desc=True).execute()
 
-    if resp.status_code >= 300:
-        st.error(f"Error fetching videos: {resp}")
+    if resp.data is None:
+        st.error("Failed to fetch videos from database.")
         return
 
-    data = resp.data or []
+    data = resp.data
 
     if not data:
         st.info("No videos found with current filters.")
@@ -250,8 +221,8 @@ def browse_page():
             .execute()
         )
 
-        if resp.status_code >= 300:
-            st.error(f"Update error: {resp}")
+        if resp.data is None:
+            st.error("Update failed.")
         else:
             st.success("Metadata updated. Refresh to see changes.")
 
@@ -275,10 +246,11 @@ def browse_page():
                 .execute()
             )
 
-            if resp.status_code >= 300:
-                st.error(f"DB delete error: {resp}")
+            if resp.data is None:
+                st.error("Delete failed.")
             else:
                 st.success("Video and metadata deleted. Refresh to update list.")
+
 
 
 
