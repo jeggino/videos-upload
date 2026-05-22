@@ -9,17 +9,13 @@ from supabase import create_client, Client
 
 load_dotenv()
 
-import streamlit as st
-from supabase import create_client, Client
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_ANON_KEY = st.secrets["SUPABASE_ANON_KEY"]
-SUPABASE_SERVICE_ROLE_KEY = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 @st.cache_resource
 def get_supabase_client() -> Client:
-    # Use service role for full CRUD on storage + table
-    return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 supabase = get_supabase_client()
 
