@@ -9,16 +9,20 @@ from supabase import create_client, Client
 
 load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or SUPABASE_ANON_KEY
-BUCKET_NAME = "video-smp"
+import streamlit as st
+from supabase import create_client, Client
+
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_ANON_KEY = st.secrets["SUPABASE_ANON_KEY"]
+SUPABASE_SERVICE_ROLE_KEY = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
 
 @st.cache_resource
 def get_supabase_client() -> Client:
+    # Use service role for full CRUD on storage + table
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 supabase = get_supabase_client()
+
 
 st.set_page_config(page_title="Video SMP", layout="wide")
 
