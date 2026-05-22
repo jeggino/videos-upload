@@ -1,18 +1,14 @@
-import os
 import uuid
 import datetime as dt
 
 import streamlit as st
 import pandas as pd
-
 from supabase import create_client, Client
 
-
-
+# ---------- CONFIG ----------
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-
 BUCKET_NAME = "video-smp"
 
 
@@ -20,8 +16,8 @@ BUCKET_NAME = "video-smp"
 def get_supabase_client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
-supabase = get_supabase_client()
 
+supabase = get_supabase_client()
 
 st.set_page_config(page_title="Video SMP", layout="wide")
 
@@ -29,7 +25,9 @@ PAGES = ["Upload videos", "Browse & manage videos"]
 page = st.sidebar.radio("Navigation", PAGES)
 
 
-def upload_video():
+# ---------- UPLOAD PAGE ----------
+
+def upload_page():
     st.header("Upload a new video")
 
     with st.form("upload_form", clear_on_submit=True):
@@ -42,54 +40,59 @@ def upload_video():
 
         submitted = st.form_submit_button("Upload")
 
-    if submitted:
-        if not file:
-            st.error("Please select a video file.")
+    if not submitted:
+        return
+
+    if not file:
+        st.error("Please select a video file.")
+        return
+
+    if not observer or not location or not project:
+        st.error("Observer, location, and project are required.")
+        return
+
+    # Unique path in bucket
+    ext = file.name.split(".")[-1]
+    unique_id = str(uuid.uuid4())
+    storage_path = f"{unique_id}.{ext}"
+
+    # 1) Upload to storage
+    try:
+        res = supabase.storage.from_(BUCKET_NAME).upload(
+            path=storage_path,
+            file=file.getvalue(),
+            file_options={"content-type": file.type},
+        )
+        if isinstance(res, dict) and res.get("error"):
+            st.error(f"Storage upload error: {res['error']['message']}")
             return
-        if not observer or not location or not project:
-            st.error("Observer, location, and project are required.")
+    except Exception as e:
+        st.error(f"Storage upload failed: {e}")
+        return
+
+    # 2) Insert metadata
+    try:
+        data = {
+            "storage_path": storage_path,
+            "file_name": file.name,
+            "observer": observer,
+            "observed_at": observed_at.isoformat(),
+            "location": location,
+            "project": project,
+            "description": description,
+        }
+        resp = supabase.table("video_observations").insert(data).execute()
+        if resp.error:
+            st.error(f"DB insert error: {resp.error.message}")
             return
+    except Exception as e:
+        st.error(f"DB insert failed: {e}")
+        return
 
-        # Generate a unique path in the bucket
-        ext = os.path.splitext(file.name)[1]
-        unique_id = str(uuid.uuid4())
-        storage_path = f"{unique_id}{ext}"
+    st.success("Video and metadata uploaded successfully.")
 
-        # Upload to Supabase Storage
-        try:
-            res = supabase.storage.from_(BUCKET_NAME).upload(
-                path=storage_path,
-                file=file.getvalue(),
-                file_options={"content-type": file.type},
-            )
-            if res.get("error"):
-                st.error(f"Upload error: {res['error']['message']}")
-                return
-        except Exception as e:
-            st.error(f"Upload failed: {e}")
-            return
 
-        # Insert metadata row
-        try:
-            data = {
-                "storage_path": storage_path,
-                "file_name": file.name,
-                "observer": observer,
-                "observed_at": observed_at.isoformat(),
-                "location": location,
-                "project": project,
-                "description": description,
-            }
-            resp = supabase.table("video_observations").insert(data).execute()
-            if resp.error:
-                st.error(f"DB insert error: {resp.error.message}")
-                return
-        except Exception as e:
-            st.error(f"DB insert failed: {e}")
-            return
-
-        st.success("Video and metadata uploaded successfully.")
-
+# ---------- BROWSE / MANAGE PAGE ----------
 
 def fetch_videos(filters: dict):
     query = supabase.table("video_observations").select("*")
@@ -111,14 +114,15 @@ def fetch_videos(filters: dict):
 
 
 def get_public_url(storage_path: str) -> str:
-    # If bucket is private, you may want signed URLs instead
+    # Bucket is private but policies allow public; this returns a public URL
     res = supabase.storage.from_(BUCKET_NAME).get_public_url(storage_path)
     return res
 
 
-def browse_videos():
+def browse_page():
     st.header("Browse & manage videos")
 
+    # Filters
     with st.expander("Filters", expanded=True):
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -126,8 +130,11 @@ def browse_videos():
         with col2:
             project = st.text_input("Project (contains)")
         with col3:
-            date_from = st.date_input("From date", value=None)
-            date_to = st.date_input("To date", value=None)
+            date_range = st.date_input("Date range", value=[None, None])
+
+    date_from, date_to = None, None
+    if isinstance(date_range, list) and len(date_range) == 2:
+        date_from, date_to = date_range
 
     filters = {
         "observer": observer.strip() or None,
@@ -158,22 +165,25 @@ def browse_videos():
 
     row = id_to_row[selected_id]
 
-    # Show video (if accessible via public URL)
+    # Show video
     try:
         url = get_public_url(row["storage_path"])
         st.video(url)
     except Exception:
         st.info("Video preview not available (check bucket access).")
 
+    # Edit form
     with st.form("edit_form"):
         observer = st.text_input("Observer", value=row["observer"])
         observed_at = st.date_input(
             "Observation date",
-            value=dt.date.fromisoformat(row["observed_at"][:10]),
+            value=dt.date.fromisoformat(str(row["observed_at"])[:10]),
         )
         location = st.text_input("Location", value=row["location"])
         project = st.text_input("Project", value=row["project"])
-        description = st.text_area("Description", value=row.get("description") or "", height=100)
+        description = st.text_area(
+            "Description", value=row.get("description") or "", height=100
+        )
 
         col_a, col_b = st.columns(2)
         with col_a:
@@ -190,7 +200,9 @@ def browse_videos():
                 "project": project,
                 "description": description,
             }
-            resp = supabase.table("video_observations").update(update_data).eq("id", selected_id).execute()
+            resp = supabase.table("video_observations").update(update_data).eq(
+                "id", selected_id
+            ).execute()
             if resp.error:
                 st.error(f"Update error: {resp.error.message}")
             else:
@@ -204,16 +216,18 @@ def browse_videos():
         confirm2 = st.checkbox("Yes, I understand this cannot be undone.")
 
         if confirm1 and confirm2:
-            # Delete from storage first
+            # Delete from storage
             try:
                 supabase.storage.from_(BUCKET_NAME).remove([row["storage_path"]])
             except Exception as e:
                 st.error(f"Storage delete failed: {e}")
                 return
 
-            # Then delete DB row
+            # Delete DB row
             try:
-                resp = supabase.table("video_observations").delete().eq("id", selected_id).execute()
+                resp = supabase.table("video_observations").delete().eq(
+                    "id", selected_id
+                ).execute()
                 if resp.error:
                     st.error(f"DB delete error: {resp.error.message}")
                 else:
@@ -222,7 +236,10 @@ def browse_videos():
                 st.error(f"DB delete failed: {e}")
 
 
+# ---------- ROUTER ----------
+
 if page == "Upload videos":
-    upload_video()
+    upload_page()
 else:
-    browse_videos()
+    browse_page()
+
