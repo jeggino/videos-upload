@@ -183,7 +183,7 @@ def browse_page():
         st.info("Video preview not available.")
 
     # -----------------------------
-    # EDIT METADATA (INSIDE DROPDOWN)
+    # EDIT METADATA (DROPDOWN)
     # -----------------------------
     with st.expander("Edit metadata", expanded=False):
 
@@ -217,7 +217,8 @@ def browse_page():
             if resp.data is None:
                 st.error("Update failed.")
             else:
-                st.success("Metadata updated. Refresh to see changes.")
+                st.success("Metadata updated.")
+                st.rerun()   # 🔥 AUTO REFRESH
 
     # -----------------------------
     # DELETE VIDEO (SIMPLE & SAFE)
@@ -247,8 +248,8 @@ def browse_page():
             if resp.data is None:
                 st.error("Delete failed.")
             else:
-                st.success("Video and metadata deleted. Refresh to update list.")
-
+                st.success("Video deleted.")
+                st.rerun()   # 🔥 AUTO REFRESH
 
 # ---------- ROUTER ----------
 
