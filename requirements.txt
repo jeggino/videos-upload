@@ -1,4 +1,5 @@
 streamlit
-supabase-py
-python-dotenv
-pandas
+supabase
+python-dateutil
+reportlab
+qrcode
