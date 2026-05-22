@@ -31,16 +31,22 @@ def upload_page():
     st.header("Upload a new video")
 
     with st.form("upload_form", clear_on_submit=True):
+        name = st.text_input("Name (required)")
         file = st.file_uploader("Video file", type=["mp4", "mov", "avi", "mkv"])
-        observer = st.text_input("Observer name")
+        observer = st.text_input("Observer (required)")
         observed_at = st.date_input("Observation date", dt.date.today())
-        location = st.text_input("Location")
-        project = st.text_input("Project")
+        location = st.text_input("Location (required)")
+        project = st.text_input("Project (required)")
         description = st.text_area("Description", height=100)
 
         submitted = st.form_submit_button("Upload")
 
     if not submitted:
+        return
+
+    # Required fields
+    if not name.strip():
+        st.error("Name is required.")
         return
 
     if not file:
@@ -51,46 +57,43 @@ def upload_page():
         st.error("Observer, location, and project are required.")
         return
 
-    # Unique path in bucket
+    # Unique path
     ext = file.name.split(".")[-1]
     unique_id = str(uuid.uuid4())
     storage_path = f"{unique_id}.{ext}"
 
-    # 1) Upload to storage
+    # Upload to storage
     try:
         res = supabase.storage.from_(BUCKET_NAME).upload(
             path=storage_path,
             file=file.getvalue(),
             file_options={"content-type": file.type},
         )
-        if isinstance(res, dict) and res.get("error"):
-            st.error(f"Storage upload error: {res['error']['message']}")
-            return
     except Exception as e:
         st.error(f"Storage upload failed: {e}")
         return
 
-    # 2) Insert metadata
-    try:
-        data = {
-            "storage_path": storage_path,
-            "file_name": file.name,
-            "observer": observer,
-            "observed_at": observed_at.isoformat(),
-            "location": location,
-            "project": project,
-            "description": description,
-        }
-        resp = supabase.table("video_observations").insert(data).execute()
-        if not resp.data:
-            st.error("Insert failed")
-            return
+    # Insert metadata
+    data = {
+        "name": name.strip(),
+        "storage_path": storage_path,
+        "file_name": file.name,
+        "observer": observer,
+        "observed_at": observed_at.isoformat(),
+        "location": location,
+        "project": project,
+        "description": description,
+    }
 
-    except Exception as e:
-        st.error(f"DB insert failed: {e}")
+    resp = supabase.table("video_observations").insert(data).execute()
+
+    if resp.data is None:
+        st.error("Database insert failed.")
         return
 
-    st.success("Video and metadata uploaded successfully.")
+    st.success("Video uploaded successfully!")
+    st.rerun()
+
 
 
 # ---------- BROWSE / MANAGE PAGE ----------
@@ -104,10 +107,11 @@ def browse_page():
         col1, col2 = st.columns(2)
 
         with col1:
+            name_filter = st.text_input("Name (contains)")
             observer = st.text_input("Observer (contains)")
-            project = st.text_input("Project (contains)")
 
         with col2:
+            project = st.text_input("Project (contains)")
             use_date_filter = st.checkbox("Filter by date")
 
             if use_date_filter:
@@ -123,6 +127,9 @@ def browse_page():
     # BUILD QUERY
     # -----------------------------
     query = supabase.table("video_observations").select("*")
+
+    if name_filter.strip():
+        query = query.ilike("name", f"%{name_filter.strip()}%")
 
     if observer.strip():
         query = query.ilike("observer", f"%{observer.strip()}%")
@@ -152,26 +159,13 @@ def browse_page():
         return
 
     # -----------------------------
-    # TABLE VIEW
+    # SELECT VIDEO BY NAME
     # -----------------------------
-    df = pd.DataFrame(data)
-    df_display = df[["observer", "observed_at", "project", "location", "file_name", "id"]]
-    st.dataframe(df_display, use_container_width=True)
+    name_list = [f"{row['name']}  —  {row['file_name']}" for row in data]
+    name_to_row = {f"{row['name']}  —  {row['file_name']}": row for row in data}
 
-    st.markdown("---")
-    st.subheader("Edit / delete a video")
-
-    # -----------------------------
-    # SELECT VIDEO
-    # -----------------------------
-    ids = df["id"].tolist()
-    id_to_row = {row["id"]: row for row in data}
-
-    selected_id = st.selectbox("Select a video by ID", ids)
-    if not selected_id:
-        return
-
-    row = id_to_row[selected_id]
+    selected_label = st.selectbox("Select a video", name_list)
+    row = name_to_row[selected_label]
 
     # -----------------------------
     # VIDEO PREVIEW
@@ -183,10 +177,11 @@ def browse_page():
         st.info("Video preview not available.")
 
     # -----------------------------
-    # EDIT METADATA (DROPDOWN)
+    # EDIT METADATA
     # -----------------------------
     with st.expander("Edit metadata", expanded=False):
 
+        name = st.text_input("Name (required)", value=row["name"])
         observer = st.text_input("Observer", value=row["observer"])
         observed_at = st.date_input(
             "Observation date",
@@ -199,7 +194,12 @@ def browse_page():
         )
 
         if st.button("Save changes"):
+            if not name.strip():
+                st.error("Name is required.")
+                return
+
             update_data = {
+                "name": name.strip(),
                 "observer": observer,
                 "observed_at": observed_at.isoformat(),
                 "location": location,
@@ -210,7 +210,7 @@ def browse_page():
             resp = (
                 supabase.table("video_observations")
                 .update(update_data)
-                .eq("id", selected_id)
+                .eq("id", row["id"])
                 .execute()
             )
 
@@ -218,10 +218,10 @@ def browse_page():
                 st.error("Update failed.")
             else:
                 st.success("Metadata updated.")
-                st.rerun()   # 🔥 AUTO REFRESH
+                st.rerun()
 
     # -----------------------------
-    # DELETE VIDEO (SIMPLE & SAFE)
+    # DELETE VIDEO
     # -----------------------------
     st.markdown("---")
     st.markdown("### Delete this video")
@@ -230,18 +230,16 @@ def browse_page():
         st.warning("This action is permanent. Click below to confirm.")
 
         if st.button("YES, delete permanently"):
-            # Delete from storage
             try:
                 supabase.storage.from_(BUCKET_NAME).remove([row["storage_path"]])
             except Exception as e:
                 st.error(f"Storage delete failed: {e}")
                 return
 
-            # Delete DB row
             resp = (
                 supabase.table("video_observations")
                 .delete()
-                .eq("id", selected_id)
+                .eq("id", row["id"])
                 .execute()
             )
 
@@ -249,7 +247,8 @@ def browse_page():
                 st.error("Delete failed.")
             else:
                 st.success("Video deleted.")
-                st.rerun()   # 🔥 AUTO REFRESH
+                st.rerun()
+
 
 # ---------- ROUTER ----------
 
