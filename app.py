@@ -94,7 +94,6 @@ def upload_page():
 
 
 # ---------- BROWSE / MANAGE PAGE ----------
-
 def browse_page():
     st.header("Browse & manage videos")
 
@@ -103,9 +102,11 @@ def browse_page():
     # -----------------------------
     with st.expander("Filters", expanded=True):
         col1, col2 = st.columns(2)
+
         with col1:
             observer = st.text_input("Observer (contains)")
             project = st.text_input("Project (contains)")
+
         with col2:
             use_date_filter = st.checkbox("Filter by date")
 
@@ -141,7 +142,7 @@ def browse_page():
     resp = query.order("observed_at", desc=True).execute()
 
     if resp.data is None:
-        st.error("Failed to fetch videos from database.")
+        st.error("Failed to fetch videos.")
         return
 
     data = resp.data
@@ -182,30 +183,22 @@ def browse_page():
         st.info("Video preview not available.")
 
     # -----------------------------
-    # EDIT FORM
+    # EDIT METADATA (NO FORM)
     # -----------------------------
-    with st.form("edit_form"):
-        observer = st.text_input("Observer", value=row["observer"])
-        observed_at = st.date_input(
-            "Observation date",
-            value=dt.date.fromisoformat(str(row["observed_at"])[:10]),
-        )
-        location = st.text_input("Location", value=row["location"])
-        project = st.text_input("Project", value=row["project"])
-        description = st.text_area(
-            "Description", value=row.get("description") or "", height=100
-        )
+    st.markdown("### Edit metadata")
 
-        col_a, col_b = st.columns(2)
-        with col_a:
-            save_btn = st.form_submit_button("Save changes")
-        with col_b:
-            delete_btn = st.form_submit_button("Delete video", type="secondary")
+    observer = st.text_input("Observer", value=row["observer"])
+    observed_at = st.date_input(
+        "Observation date",
+        value=dt.date.fromisoformat(str(row["observed_at"])[:10]),
+    )
+    location = st.text_input("Location", value=row["location"])
+    project = st.text_input("Project", value=row["project"])
+    description = st.text_area(
+        "Description", value=row.get("description") or "", height=100
+    )
 
-    # -----------------------------
-    # SAVE CHANGES
-    # -----------------------------
-    if save_btn:
+    if st.button("Save changes"):
         update_data = {
             "observer": observer,
             "observed_at": observed_at.isoformat(),
@@ -227,82 +220,34 @@ def browse_page():
             st.success("Metadata updated. Refresh to see changes.")
 
     # -----------------------------
-    # EDIT FORM
+    # DELETE VIDEO (SIMPLE & SAFE)
     # -----------------------------
-    with st.form("edit_form"):
-        observer = st.text_input("Observer", value=row["observer"])
-        observed_at = st.date_input(
-            "Observation date",
-            value=dt.date.fromisoformat(str(row["observed_at"])[:10]),
-        )
-        location = st.text_input("Location", value=row["location"])
-        project = st.text_input("Project", value=row["project"])
-        description = st.text_area(
-            "Description", value=row.get("description") or "", height=100
-        )
+    st.markdown("---")
+    st.markdown("### Delete this video")
 
-        save_btn = st.form_submit_button("Save changes")
+    if st.button("Delete video"):
+        st.warning("This action is permanent. Click below to confirm.")
 
-    # -----------------------------
-    # SAVE CHANGES
-    # -----------------------------
-    if save_btn:
-        update_data = {
-            "observer": observer,
-            "observed_at": observed_at.isoformat(),
-            "location": location,
-            "project": project,
-            "description": description,
-        }
+        if st.button("YES, delete permanently"):
+            # Delete from storage
+            try:
+                supabase.storage.from_(BUCKET_NAME).remove([row["storage_path"]])
+            except Exception as e:
+                st.error(f"Storage delete failed: {e}")
+                return
 
-        resp = (
-            supabase.table("video_observations")
-            .update(update_data)
-            .eq("id", selected_id)
-            .execute()
-        )
+            # Delete DB row
+            resp = (
+                supabase.table("video_observations")
+                .delete()
+                .eq("id", selected_id)
+                .execute()
+            )
 
-        if resp.data is None:
-            st.error("Update failed.")
-        else:
-            st.success("Metadata updated. Refresh to see changes.")
-
-        # -----------------------------
-        # SIMPLE DELETE SECTION
-        # -----------------------------
-        st.markdown("### Delete this video")
-    
-        confirm1 = st.checkbox("I really want to delete this video.")
-        confirm2 = st.checkbox("I understand this cannot be undone.")
-    
-        delete_now = st.button("Delete video permanently")
-    
-        if delete_now:
-            if not (confirm1 and confirm2):
-                st.error("Please tick both confirmations before deleting.")
+            if resp.data is None:
+                st.error("Delete failed.")
             else:
-                # Delete from storage
-                try:
-                    supabase.storage.from_(BUCKET_NAME).remove([row["storage_path"]])
-                except Exception as e:
-                    st.error(f"Storage delete failed: {e}")
-                    return
-    
-                # Delete DB row
-                resp = (
-                    supabase.table("video_observations")
-                    .delete()
-                    .eq("id", selected_id)
-                    .execute()
-                )
-    
-                if resp.data is None:
-                    st.error("Delete failed.")
-                else:
-                    st.success("Video and metadata deleted. Refresh to update list.")
-    
-    
-
+                st.success("Video and metadata deleted. Refresh to update list.")
 
 # ---------- ROUTER ----------
 
