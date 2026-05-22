@@ -227,31 +227,81 @@ def browse_page():
             st.success("Metadata updated. Refresh to see changes.")
 
     # -----------------------------
-    # DELETE VIDEO
+    # EDIT FORM
     # -----------------------------
-    if delete_btn:
-        st.warning("You are about to delete this video and its metadata.")
-        confirm1 = st.checkbox("Yes, I really want to delete this video.")
-        confirm2 = st.checkbox("Yes, I understand this cannot be undone.")
+    with st.form("edit_form"):
+        observer = st.text_input("Observer", value=row["observer"])
+        observed_at = st.date_input(
+            "Observation date",
+            value=dt.date.fromisoformat(str(row["observed_at"])[:10]),
+        )
+        location = st.text_input("Location", value=row["location"])
+        project = st.text_input("Project", value=row["project"])
+        description = st.text_area(
+            "Description", value=row.get("description") or "", height=100
+        )
 
-        if confirm1 and confirm2:
-            # Delete from storage
-            supabase.storage.from_(BUCKET_NAME).remove([row["storage_path"]])
+        save_btn = st.form_submit_button("Save changes")
 
-            # Delete DB row
-            resp = (
-                supabase.table("video_observations")
-                .delete()
-                .eq("id", selected_id)
-                .execute()
-            )
+    # -----------------------------
+    # SAVE CHANGES
+    # -----------------------------
+    if save_btn:
+        update_data = {
+            "observer": observer,
+            "observed_at": observed_at.isoformat(),
+            "location": location,
+            "project": project,
+            "description": description,
+        }
 
-            if resp.data is None:
-                st.error("Delete failed.")
+        resp = (
+            supabase.table("video_observations")
+            .update(update_data)
+            .eq("id", selected_id)
+            .execute()
+        )
+
+        if resp.data is None:
+            st.error("Update failed.")
+        else:
+            st.success("Metadata updated. Refresh to see changes.")
+
+        # -----------------------------
+        # SIMPLE DELETE SECTION
+        # -----------------------------
+        st.markdown("### Delete this video")
+    
+        confirm1 = st.checkbox("I really want to delete this video.")
+        confirm2 = st.checkbox("I understand this cannot be undone.")
+    
+        delete_now = st.button("Delete video permanently")
+    
+        if delete_now:
+            if not (confirm1 and confirm2):
+                st.error("Please tick both confirmations before deleting.")
             else:
-                st.success("Video and metadata deleted. Refresh to update list.")
-
-
+                # Delete from storage
+                try:
+                    supabase.storage.from_(BUCKET_NAME).remove([row["storage_path"]])
+                except Exception as e:
+                    st.error(f"Storage delete failed: {e}")
+                    return
+    
+                # Delete DB row
+                resp = (
+                    supabase.table("video_observations")
+                    .delete()
+                    .eq("id", selected_id)
+                    .execute()
+                )
+    
+                if resp.data is None:
+                    st.error("Delete failed.")
+                else:
+                    st.success("Video and metadata deleted. Refresh to update list.")
+    
+    
 
 
 # ---------- ROUTER ----------
