@@ -4,10 +4,10 @@ import datetime as dt
 
 import streamlit as st
 import pandas as pd
-from dotenv import load_dotenv
+
 from supabase import create_client, Client
 
-load_dotenv()
+
 
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
