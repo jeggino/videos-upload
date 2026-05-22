@@ -123,33 +123,65 @@ def get_public_url(storage_path: str) -> str:
 def browse_page():
     st.header("Browse & manage videos")
 
-    # Filters
+    # -----------------------------
+    # FILTERS
+    # -----------------------------
     with st.expander("Filters", expanded=True):
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
             observer = st.text_input("Observer (contains)")
-        with col2:
             project = st.text_input("Project (contains)")
-        with col3:
-            date_range = st.date_input("Date range", value=[None, None])
+        with col2:
+            use_date_filter = st.checkbox("Filter by date")
 
-    date_from, date_to = None, None
-    if isinstance(date_range, list) and len(date_range) == 2:
-        date_from, date_to = date_range
+            if use_date_filter:
+                date_range = st.date_input(
+                    "Date range",
+                    value=[dt.date.today(), dt.date.today()],
+                )
+                date_from, date_to = date_range
+            else:
+                date_from, date_to = None, None
 
     filters = {
         "observer": observer.strip() or None,
         "project": project.strip() or None,
-        "date_from": date_from if isinstance(date_from, dt.date) else None,
-        "date_to": date_to if isinstance(date_to, dt.date) else None,
+        "date_from": date_from,
+        "date_to": date_to,
     }
 
-    data = fetch_videos(filters)
+    # -----------------------------
+    # FETCH DATA
+    # -----------------------------
+    query = supabase.table("video_observations").select("*")
+
+    if filters["observer"]:
+        query = query.ilike("observer", f"%{filters['observer']}%")
+
+    if filters["project"]:
+        query = query.ilike("project", f"%{filters['project']}%")
+
+    if filters["date_from"]:
+        query = query.gte("observed_at", filters["date_from"].isoformat())
+
+    if filters["date_to"]:
+        query = query.lte("observed_at", filters["date_to"].isoformat())
+
+    resp = query.order("observed_at", desc=True).execute()
+
+    if resp.status_code >= 300:
+        st.error(f"Error fetching videos: {resp}")
+        return
+
+    data = resp.data or []
 
     if not data:
         st.info("No videos found with current filters.")
         return
 
+    # -----------------------------
+    # TABLE VIEW
+    # -----------------------------
     df = pd.DataFrame(data)
     df_display = df[["observer", "observed_at", "project", "location", "file_name", "id"]]
     st.dataframe(df_display, use_container_width=True)
@@ -157,6 +189,9 @@ def browse_page():
     st.markdown("---")
     st.subheader("Edit / delete a video")
 
+    # -----------------------------
+    # SELECT VIDEO
+    # -----------------------------
     ids = df["id"].tolist()
     id_to_row = {row["id"]: row for row in data}
 
@@ -166,14 +201,18 @@ def browse_page():
 
     row = id_to_row[selected_id]
 
-    # Show video
+    # -----------------------------
+    # VIDEO PREVIEW
+    # -----------------------------
     try:
-        url = get_public_url(row["storage_path"])
+        url = supabase.storage.from_(BUCKET_NAME).get_public_url(row["storage_path"])
         st.video(url)
     except Exception:
-        st.info("Video preview not available (check bucket access).")
+        st.info("Video preview not available.")
 
-    # Edit form
+    # -----------------------------
+    # EDIT FORM
+    # -----------------------------
     with st.form("edit_form"):
         observer = st.text_input("Observer", value=row["observer"])
         observed_at = st.date_input(
@@ -192,25 +231,33 @@ def browse_page():
         with col_b:
             delete_btn = st.form_submit_button("Delete video", type="secondary")
 
+    # -----------------------------
+    # SAVE CHANGES
+    # -----------------------------
     if save_btn:
-        try:
-            update_data = {
-                "observer": observer,
-                "observed_at": observed_at.isoformat(),
-                "location": location,
-                "project": project,
-                "description": description,
-            }
-            resp = supabase.table("video_observations").update(update_data).eq(
-                "id", selected_id
-            ).execute()
-            if resp.error:
-                st.error(f"Update error: {resp.error.message}")
-            else:
-                st.success("Metadata updated. Refresh to see changes.")
-        except Exception as e:
-            st.error(f"Update failed: {e}")
+        update_data = {
+            "observer": observer,
+            "observed_at": observed_at.isoformat(),
+            "location": location,
+            "project": project,
+            "description": description,
+        }
 
+        resp = (
+            supabase.table("video_observations")
+            .update(update_data)
+            .eq("id", selected_id)
+            .execute()
+        )
+
+        if resp.status_code >= 300:
+            st.error(f"Update error: {resp}")
+        else:
+            st.success("Metadata updated. Refresh to see changes.")
+
+    # -----------------------------
+    # DELETE VIDEO
+    # -----------------------------
     if delete_btn:
         st.warning("You are about to delete this video and its metadata.")
         confirm1 = st.checkbox("Yes, I really want to delete this video.")
@@ -218,23 +265,21 @@ def browse_page():
 
         if confirm1 and confirm2:
             # Delete from storage
-            try:
-                supabase.storage.from_(BUCKET_NAME).remove([row["storage_path"]])
-            except Exception as e:
-                st.error(f"Storage delete failed: {e}")
-                return
+            supabase.storage.from_(BUCKET_NAME).remove([row["storage_path"]])
 
             # Delete DB row
-            try:
-                resp = supabase.table("video_observations").delete().eq(
-                    "id", selected_id
-                ).execute()
-                if resp.error:
-                    st.error(f"DB delete error: {resp.error.message}")
-                else:
-                    st.success("Video and metadata deleted. Refresh to update list.")
-            except Exception as e:
-                st.error(f"DB delete failed: {e}")
+            resp = (
+                supabase.table("video_observations")
+                .delete()
+                .eq("id", selected_id)
+                .execute()
+            )
+
+            if resp.status_code >= 300:
+                st.error(f"DB delete error: {resp}")
+            else:
+                st.success("Video and metadata deleted. Refresh to update list.")
+
 
 
 # ---------- ROUTER ----------
