@@ -243,7 +243,7 @@ def browse_page():
     # -----------------------------
     col_media, col_info = st.columns([2, 1])
 
-    bucket = BUCKET_NAME if row["media_type"] == "video" else "callings"
+    bucket = VIDEO_BUCKET_NAME if row["media_type"] == "video" else "callings"
 
     # LEFT COLUMN: VIDEO OR AUDIO
     with col_media:
