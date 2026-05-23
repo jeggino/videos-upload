@@ -142,7 +142,16 @@ def upload_page():
 
 # ---------- BROWSE / MANAGE PAGE ----------
 def browse_page():
-    st.header("Browse & manage videos")
+    st.header("Browse & manage media")
+
+    # -----------------------------
+    # MEDIA TYPE FILTER
+    # -----------------------------
+    media_choice = st.radio(
+        "Media type",
+        ["All", "Video", "Audio"],
+        horizontal=True
+    )
 
     # -----------------------------
     # FILTERS
@@ -152,40 +161,58 @@ def browse_page():
 
         with col1:
             name_filter = st.text_input("Name (contains)")
-            observer = st.text_input("Observer (contains)")
+            observer_filter = st.text_input("Observer (contains)")
+            location_filter = st.text_input("Location (contains)")
 
         with col2:
-            project = st.text_input("Project (contains)")
-            use_date_filter = st.checkbox("Filter by date")
+            project_filter = st.text_input("Project (contains)")
 
-            if use_date_filter:
-                date_range = st.date_input(
-                    "Date range",
-                    value=[dt.date.today(), dt.date.today()],
-                )
-                date_from, date_to = date_range
+            # DATE SLIDER (SAFE)
+            dates = supabase.table("video_observations") \
+                .select("observed_at") \
+                .order("observed_at") \
+                .execute().data
+
+            if dates:
+                all_dates = sorted([dt.date.fromisoformat(d["observed_at"]) for d in dates])
+                min_date, max_date = all_dates[0], all_dates[-1]
             else:
-                date_from, date_to = None, None
+                min_date = max_date = dt.date.today()
+
+            date_range = st.slider(
+                "Observation date range",
+                min_value=min_date,
+                max_value=max_date,
+                value=(min_date, max_date)
+            )
 
     # -----------------------------
     # BUILD QUERY
     # -----------------------------
     query = supabase.table("video_observations").select("*")
 
+    # Media type
+    if media_choice == "Video":
+        query = query.eq("media_type", "video")
+    elif media_choice == "Audio":
+        query = query.eq("media_type", "audio")
+
+    # Text filters
     if name_filter.strip():
         query = query.ilike("name", f"%{name_filter.strip()}%")
 
-    if observer.strip():
-        query = query.ilike("observer", f"%{observer.strip()}%")
+    if observer_filter.strip():
+        query = query.ilike("observer", f"%{observer_filter.strip()}%")
 
-    if project.strip():
-        query = query.ilike("project", f"%{project.strip()}%")
+    if location_filter.strip():
+        query = query.ilike("location", f"%{location_filter.strip()}%")
 
-    if date_from:
-        query = query.gte("observed_at", date_from.isoformat())
+    if project_filter.strip():
+        query = query.ilike("project", f"%{project_filter.strip()}%")
 
-    if date_to:
-        query = query.lte("observed_at", date_to.isoformat())
+    # Date range filter
+    query = query.gte("observed_at", date_range[0].isoformat())
+    query = query.lte("observed_at", date_range[1].isoformat())
 
     # -----------------------------
     # EXECUTE QUERY
@@ -193,32 +220,37 @@ def browse_page():
     resp = query.order("observed_at", desc=True).execute()
 
     if resp.data is None:
-        st.error("Failed to fetch videos.")
+        st.error("Failed to fetch media.")
         return
 
     data = resp.data
 
     if not data:
-        st.info("No videos found with current filters.")
+        st.info("No media found with current filters.")
         return
 
     # -----------------------------
-    # SELECT VIDEO BY NAME + PROJECT
+    # SELECT MEDIA BY NAME + PROJECT
     # -----------------------------
     select_labels = [f"{row['name']} — {row['project']}" for row in data]
     label_to_row = {f"{row['name']} — {row['project']}": row for row in data}
 
-    selected_label = st.selectbox("Select a video", select_labels)
+    selected_label = st.selectbox("Select media", select_labels)
     row = label_to_row[selected_label]
 
     # -----------------------------
-    # VIDEO PREVIEW
+    # PREVIEW (VIDEO OR AUDIO)
     # -----------------------------
+    bucket = VIDEO_BUCKET_NAME if row["media_type"] == "video" else "callings"
+
     try:
-        url = supabase.storage.from_(BUCKET_NAME).get_public_url(row["storage_path"])
-        st.video(url)
+        url = supabase.storage.from_(bucket).get_public_url(row["storage_path"])
+        if row["media_type"] == "video":
+            st.video(url)
+        else:
+            st.audio(url)
     except Exception:
-        st.info("Video preview not available.")
+        st.info("Preview not available.")
 
     # -----------------------------
     # EDIT METADATA
@@ -262,29 +294,27 @@ def browse_page():
                 st.error("Update failed.")
             else:
                 st.success("Metadata updated.")
-                st.rerun()   # 🔥 AUTO REFRESH
+                st.rerun()
 
     # -----------------------------
-    # DELETE VIDEO (RELIABLE VERSION)
+    # DELETE MEDIA (SAFE)
     # -----------------------------
     st.markdown("---")
-    st.markdown("### Delete this video")
+    st.markdown("### Delete this media")
 
-    if st.button("Delete video"):
+    if st.button("Delete media"):
         st.session_state["confirm_delete"] = True
 
     if st.session_state.get("confirm_delete", False):
         st.warning("This action is permanent. Click below to confirm deletion.")
 
         if st.button("YES, delete permanently"):
-            # Delete from storage
             try:
-                supabase.storage.from_(BUCKET_NAME).remove([row["storage_path"]])
+                supabase.storage.from_(bucket).remove([row["storage_path"]])
             except Exception as e:
                 st.error(f"Storage delete failed: {e}")
                 return
 
-            # Delete DB row
             resp = (
                 supabase.table("video_observations")
                 .delete()
@@ -295,9 +325,10 @@ def browse_page():
             if resp.data is None:
                 st.error("Delete failed.")
             else:
-                st.success("Video deleted.")
+                st.success("Media deleted.")
                 st.session_state["confirm_delete"] = False
-                st.rerun()   # 🔥 AUTO REFRESH
+                st.rerun()
+
 
 
 
