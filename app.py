@@ -152,7 +152,7 @@ def browse_page():
     st.header("Browse & manage media")
 
     # -----------------------------
-    # MEDIA TYPE FILTER (NO 'ALL')
+    # MEDIA TYPE FILTER
     # -----------------------------
     media_choice = st.radio(
         "Media type",
@@ -161,9 +161,9 @@ def browse_page():
     )
 
     # -----------------------------
-    # FETCH ALL DATA FIRST (for filters)
+    # FETCH ALL DATA FOR THIS MEDIA TYPE
     # -----------------------------
-    all_rows = (
+    base_rows = (
         supabase.table("video_observations")
         .select("*")
         .eq("media_type", media_choice.lower())
@@ -172,65 +172,68 @@ def browse_page():
         or []
     )
 
-    # Build unique filter lists based on media type
-    all_projects = sorted({row["project"] for row in all_rows})
-    all_locations = sorted({row["location"] for row in all_rows})
-    all_observers = sorted({row["observer"] for row in all_rows})
-    all_species = sorted({row["species"] for row in all_rows})
-
     # -----------------------------
-    # FILTERS (MULTISELECT)
+    # CASCADE FILTER LOGIC
     # -----------------------------
     with st.expander("Filters", expanded=True):
 
+        # 1. NAME FILTER
         name_filter = st.text_input("Name (contains)")
 
-        project_filter = st.multiselect("Project", all_projects)
-        location_filter = st.multiselect("Location", all_locations)
-        observer_filter = st.multiselect("Observer", all_observers)
-        species_filter = st.multiselect("Species", all_species)
+        # Filter rows by name first
+        rows_after_name = [
+            r for r in base_rows
+            if name_filter.lower() in r["name"].lower()
+        ] if name_filter else base_rows
+
+        # 2. PROJECT FILTER
+        project_options = sorted({r["project"] for r in rows_after_name})
+        project_filter = st.multiselect("Project", project_options)
+
+        rows_after_project = [
+            r for r in rows_after_name
+            if (not project_filter or r["project"] in project_filter)
+        ]
+
+        # 3. LOCATION FILTER
+        location_options = sorted({r["location"] for r in rows_after_project})
+        location_filter = st.multiselect("Location", location_options)
+
+        rows_after_location = [
+            r for r in rows_after_project
+            if (not location_filter or r["location"] in location_filter)
+        ]
+
+        # 4. OBSERVER FILTER
+        observer_options = sorted({r["observer"] for r in rows_after_location})
+        observer_filter = st.multiselect("Observer", observer_options)
+
+        rows_after_observer = [
+            r for r in rows_after_location
+            if (not observer_filter or r["observer"] in observer_filter)
+        ]
+
+        # 5. SPECIES FILTER
+        species_options = sorted({r["species"] for r in rows_after_observer})
+        species_filter = st.multiselect("Species", species_options)
+
+        final_rows = [
+            r for r in rows_after_observer
+            if (not species_filter or r["species"] in species_filter)
+        ]
 
     # -----------------------------
-    # BUILD QUERY WITH FILTERS
+    # NO RESULTS?
     # -----------------------------
-    query = (
-        supabase.table("video_observations")
-        .select("*")
-        .eq("media_type", media_choice.lower())
-    )
-
-    # Name contains
-    if name_filter.strip():
-        query = query.ilike("name", f"%{name_filter.strip()}%")
-
-    # Multi-select filters
-    if project_filter:
-        query = query.in_("project", project_filter)
-
-    if location_filter:
-        query = query.in_("location", location_filter)
-
-    if observer_filter:
-        query = query.in_("observer", observer_filter)
-
-    if species_filter:
-        query = query.in_("species", species_filter)
-
-    # -----------------------------
-    # EXECUTE QUERY
-    # -----------------------------
-    resp = query.order("observed_at", desc=True).execute()
-    data = resp.data
-
-    if not data:
+    if not final_rows:
         st.info("No media found with current filters.")
         return
 
     # -----------------------------
     # SELECT MEDIA BY NAME + PROJECT
     # -----------------------------
-    select_labels = [f"{row['name']} — {row['project']}" for row in data]
-    label_to_row = {label: row for label, row in zip(select_labels, data)}
+    select_labels = [f"{r['name']} — {r['project']}" for r in final_rows]
+    label_to_row = {label: row for label, row in zip(select_labels, final_rows)}
 
     selected_label = st.selectbox("Select media", select_labels)
     row = label_to_row[selected_label]
@@ -240,8 +243,7 @@ def browse_page():
     # -----------------------------
     col_media, col_info = st.columns([2, 1])
 
-    # Determine bucket
-    bucket = VIDEO_BUCKET_NAME if row["media_type"] == "video" else "callings"
+    bucket = BUCKET_NAME if row["media_type"] == "video" else "callings"
 
     # LEFT COLUMN: VIDEO OR AUDIO
     with col_media:
@@ -256,7 +258,7 @@ def browse_page():
 
     # RIGHT COLUMN: DESCRIPTION + METADATA
     with col_info:
-        st.subheader("Details")
+        st.markdown("<h3 style='color:#007BFF;'>Details</h3>", unsafe_allow_html=True)
         st.write(f"**Name:** {row['name']}")
         st.write(f"**Species:** {row['species']}")
         st.write(f"**Observer:** {row['observer']}")
@@ -306,7 +308,7 @@ def browse_page():
             st.rerun()
 
     # -----------------------------
-    # DELETE MEDIA (SAFE)
+    # DELETE MEDIA
     # -----------------------------
     st.markdown("---")
     st.subheader("Delete this media")
@@ -332,41 +334,6 @@ def browse_page():
             st.success("Media deleted.")
             st.session_state["confirm_delete"] = False
             st.rerun()
-
-
-    # -----------------------------
-    # DELETE MEDIA (SAFE)
-    # -----------------------------
-    st.markdown("---")
-    st.subheader("Delete this media")
-
-    if st.button("Delete media"):
-        st.session_state["confirm_delete"] = True
-
-    if st.session_state.get("confirm_delete", False):
-        st.warning("This action is permanent. Click below to confirm deletion.")
-
-        if st.button("YES, delete permanently"):
-            try:
-                supabase.storage.from_(bucket).remove([row["storage_path"]])
-            except Exception as e:
-                st.error(f"Storage delete failed: {e}")
-                return
-
-            supabase.table("video_observations") \
-                .delete() \
-                .eq("id", row["id"]) \
-                .execute()
-
-            st.success("Media deleted.")
-            st.session_state["confirm_delete"] = False
-            st.rerun()
-
-
-
-
-
-
 
 
 # ---------- ROUTER ----------
