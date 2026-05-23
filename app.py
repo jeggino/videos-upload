@@ -78,7 +78,7 @@ def upload_page():
 
     # Determine bucket
     if media_type == "Video":
-        bucket = VIDEO_BUCKET_NAME   # your existing bucket
+        bucket = BUCKET_NAME   # your existing bucket
     else:
         bucket = "callings"          # new audio bucket
 
