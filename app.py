@@ -28,10 +28,29 @@ page = st.sidebar.radio("Navigation", PAGES)
 # ---------- UPLOAD PAGE ----------
 
 def upload_page():
-    st.header("Upload a new video")
+    st.header("Upload a new media file")
 
     with st.form("upload_form", clear_on_submit=True):
-        file = st.file_uploader("Video file",max_upload_size=500, type=["mp4", "mov", "avi", "mkv"])
+
+        media_type = st.radio(
+            "What are you uploading?",
+            ["Video", "Audio"],
+            horizontal=True
+        )
+
+        if media_type == "Video":
+            file = st.file_uploader(
+                "Video file",
+                max_upload_size=500,
+                type=["mp4", "mov", "avi", "mkv"]
+            )
+        else:
+            file = st.file_uploader(
+                "Audio file",
+                max_upload_size=200,
+                type=["mp3", "wav", "aac", "m4a"]
+            )
+
         name = st.text_input("Name (required)")
         observer = st.text_input("Observer (required)")
         observed_at = st.date_input("Observation date", dt.date.today())
@@ -50,12 +69,18 @@ def upload_page():
         return
 
     if not file:
-        st.error("Please select a video file.")
+        st.error("Please select a file.")
         return
 
     if not observer or not location or not project:
         st.error("Observer, location, and project are required.")
         return
+
+    # Determine bucket
+    if media_type == "Video":
+        bucket = VIDEO_BUCKET_NAME   # your existing bucket
+    else:
+        bucket = "callings"          # new audio bucket
 
     # Unique path
     ext = file.name.split(".")[-1]
@@ -64,7 +89,7 @@ def upload_page():
 
     # Upload to storage
     try:
-        res = supabase.storage.from_(BUCKET_NAME).upload(
+        supabase.storage.from_(bucket).upload(
             path=storage_path,
             file=file.getvalue(),
             file_options={"content-type": file.type},
@@ -76,6 +101,7 @@ def upload_page():
     # Insert metadata
     data = {
         "name": name.strip(),
+        "media_type": media_type.lower(),   # "video" or "audio"
         "storage_path": storage_path,
         "file_name": file.name,
         "observer": observer,
@@ -91,8 +117,9 @@ def upload_page():
         st.error("Database insert failed.")
         return
 
-    st.success("Video uploaded successfully!")
+    st.success(f"{media_type} uploaded successfully!")
     st.rerun()
+
 
 
 
