@@ -218,7 +218,7 @@ def browse_page():
     # -----------------------------
     # PREVIEW (VIDEO OR AUDIO)
     # -----------------------------
-    bucket = VIDEO_BUCKET_NAME if row["media_type"] == "video" else "callings"
+    bucket = BUCKET_NAME if row["media_type"] == "video" else "callings"
 
     try:
         url = supabase.storage.from_(bucket).get_public_url(row["storage_path"])
