@@ -163,15 +163,8 @@ def browse_page():
     all_locations = sorted({row["location"] for row in all_rows})
     all_observers = sorted({row["observer"] for row in all_rows})
 
-    # Safe date range
-    if all_rows:
-        all_dates = sorted([dt.date.fromisoformat(r["observed_at"]) for r in all_rows])
-        min_date, max_date = all_dates[0], all_dates[-1]
-    else:
-        min_date = max_date = dt.date.today()
-
     # -----------------------------
-    # FILTERS (MULTISELECT + SLIDER)
+    # FILTERS (MULTISELECT)
     # -----------------------------
     with st.expander("Filters", expanded=True):
 
@@ -180,13 +173,6 @@ def browse_page():
         project_filter = st.multiselect("Project", all_projects)
         location_filter = st.multiselect("Location", all_locations)
         observer_filter = st.multiselect("Observer", all_observers)
-
-        date_range = st.slider(
-            "Observation date range",
-            min_value=min_date,
-            max_value=max_date,
-            value=(min_date, max_date)
-        )
 
     # -----------------------------
     # BUILD QUERY WITH FILTERS
@@ -209,10 +195,6 @@ def browse_page():
 
     if observer_filter:
         query = query.in_("observer", observer_filter)
-
-    # Date range
-    query = query.gte("observed_at", date_range[0].isoformat())
-    query = query.lte("observed_at", date_range[1].isoformat())
 
     # -----------------------------
     # EXECUTE QUERY
@@ -311,6 +293,7 @@ def browse_page():
             st.success("Media deleted.")
             st.session_state["confirm_delete"] = False
             st.rerun()
+
 
 
 
