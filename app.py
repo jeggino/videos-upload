@@ -26,30 +26,36 @@ page = st.sidebar.radio("Navigation", PAGES)
 
 
 # ---------- UPLOAD PAGE ----------
-
 def upload_page():
     st.header("Upload a new media file")
 
-    with st.form("upload_form", clear_on_submit=True):
+    # -----------------------------
+    # MEDIA TYPE SELECTOR (OUTSIDE FORM)
+    # -----------------------------
+    media_type = st.radio(
+        "What are you uploading?",
+        ["Video", "Audio"],
+        horizontal=True
+    )
 
-        media_type = st.radio(
-            "What are you uploading?",
-            ["Video", "Audio"],
-            horizontal=True
+    # Dynamic uploader (works now!)
+    if media_type == "Video":
+        file = st.file_uploader(
+            "Video file",
+            max_upload_size=500,
+            type=["mp4", "mov", "avi", "mkv"]
+        )
+    else:
+        file = st.file_uploader(
+            "Audio file",
+            max_upload_size=200,
+            type=["mp3", "wav", "aac", "m4a"]
         )
 
-        if media_type == "Video":
-            file = st.file_uploader(
-                "Video file",
-                max_upload_size=500,
-                type=["mp4", "mov", "avi", "mkv"]
-            )
-        else:
-            file = st.file_uploader(
-                "Audio file",
-                max_upload_size=200,
-                type=["mp3", "wav", "aac", "m4a"]
-            )
+    # -----------------------------
+    # FORM STARTS HERE
+    # -----------------------------
+    with st.form("upload_form", clear_on_submit=True):
 
         name = st.text_input("Name (required)")
         observer = st.text_input("Observer (required)")
@@ -63,7 +69,9 @@ def upload_page():
     if not submitted:
         return
 
-    # Required fields
+    # -----------------------------
+    # VALIDATION
+    # -----------------------------
     if not name.strip():
         st.error("Name is required.")
         return
@@ -76,18 +84,24 @@ def upload_page():
         st.error("Observer, location, and project are required.")
         return
 
-    # Determine bucket
+    # -----------------------------
+    # SELECT BUCKET
+    # -----------------------------
     if media_type == "Video":
-        bucket = BUCKET_NAME   # your existing bucket
+        bucket = VIDEO_BUCKET_NAME
     else:
-        bucket = "callings"          # new audio bucket
+        bucket = "callings"
 
-    # Unique path
+    # -----------------------------
+    # UNIQUE STORAGE PATH
+    # -----------------------------
     ext = file.name.split(".")[-1]
     unique_id = str(uuid.uuid4())
     storage_path = f"{unique_id}.{ext}"
 
-    # Upload to storage
+    # -----------------------------
+    # UPLOAD TO STORAGE
+    # -----------------------------
     try:
         supabase.storage.from_(bucket).upload(
             path=storage_path,
@@ -98,10 +112,12 @@ def upload_page():
         st.error(f"Storage upload failed: {e}")
         return
 
-    # Insert metadata
+    # -----------------------------
+    # INSERT METADATA
+    # -----------------------------
     data = {
         "name": name.strip(),
-        "media_type": media_type.lower(),   # "video" or "audio"
+        "media_type": media_type.lower(),  # "video" or "audio"
         "storage_path": storage_path,
         "file_name": file.name,
         "observer": observer,
@@ -119,6 +135,7 @@ def upload_page():
 
     st.success(f"{media_type} uploaded successfully!")
     st.rerun()
+
 
 
 
