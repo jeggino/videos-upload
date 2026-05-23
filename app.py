@@ -145,72 +145,72 @@ def browse_page():
     st.header("Browse & manage media")
 
     # -----------------------------
-    # MEDIA TYPE FILTER
+    # MEDIA TYPE FILTER (NO 'ALL')
     # -----------------------------
     media_choice = st.radio(
         "Media type",
-        ["All", "Video", "Audio"],
+        ["Video", "Audio"],
         horizontal=True
     )
 
     # -----------------------------
-    # FILTERS
+    # FETCH ALL DATA FIRST (for filters)
+    # -----------------------------
+    all_rows = supabase.table("video_observations").select("*").execute().data or []
+
+    # Build unique filter lists
+    all_projects = sorted({row["project"] for row in all_rows})
+    all_locations = sorted({row["location"] for row in all_rows})
+    all_observers = sorted({row["observer"] for row in all_rows})
+
+    # Safe date range
+    if all_rows:
+        all_dates = sorted([dt.date.fromisoformat(r["observed_at"]) for r in all_rows])
+        min_date, max_date = all_dates[0], all_dates[-1]
+    else:
+        min_date = max_date = dt.date.today()
+
+    # -----------------------------
+    # FILTERS (MULTISELECT + SLIDER)
     # -----------------------------
     with st.expander("Filters", expanded=True):
-        col1, col2 = st.columns(2)
 
-        with col1:
-            name_filter = st.text_input("Name (contains)")
-            observer_filter = st.text_input("Observer (contains)")
-            location_filter = st.text_input("Location (contains)")
+        name_filter = st.text_input("Name (contains)")
 
-        with col2:
-            project_filter = st.text_input("Project (contains)")
+        project_filter = st.multiselect("Project", all_projects)
+        location_filter = st.multiselect("Location", all_locations)
+        observer_filter = st.multiselect("Observer", all_observers)
 
-            # DATE SLIDER (SAFE)
-            dates = supabase.table("video_observations") \
-                .select("observed_at") \
-                .order("observed_at") \
-                .execute().data
-
-            if dates:
-                all_dates = sorted([dt.date.fromisoformat(d["observed_at"]) for d in dates])
-                min_date, max_date = all_dates[0], all_dates[-1]
-            else:
-                min_date = max_date = dt.date.today()
-
-            date_range = st.slider(
-                "Observation date range",
-                min_value=min_date,
-                max_value=max_date,
-                value=(min_date, max_date)
-            )
+        date_range = st.slider(
+            "Observation date range",
+            min_value=min_date,
+            max_value=max_date,
+            value=(min_date, max_date)
+        )
 
     # -----------------------------
-    # BUILD QUERY
+    # BUILD QUERY WITH FILTERS
     # -----------------------------
     query = supabase.table("video_observations").select("*")
 
     # Media type
-    if media_choice == "Video":
-        query = query.eq("media_type", "video")
-    elif media_choice == "Audio":
-        query = query.eq("media_type", "audio")
+    query = query.eq("media_type", media_choice.lower())
 
-    # Text filters
+    # Name contains
     if name_filter.strip():
         query = query.ilike("name", f"%{name_filter.strip()}%")
 
-    if observer_filter.strip():
-        query = query.ilike("observer", f"%{observer_filter.strip()}%")
+    # Multi-select filters
+    if project_filter:
+        query = query.in_("project", project_filter)
 
-    if location_filter.strip():
-        query = query.ilike("location", f"%{location_filter.strip()}%")
+    if location_filter:
+        query = query.in_("location", location_filter)
 
-    if project_filter.strip():
-        query = query.ilike("project", f"%{project_filter.strip()}%")
+    if observer_filter:
+        query = query.in_("observer", observer_filter)
 
-    # Date range filter
+    # Date range
     query = query.gte("observed_at", date_range[0].isoformat())
     query = query.lte("observed_at", date_range[1].isoformat())
 
@@ -218,11 +218,6 @@ def browse_page():
     # EXECUTE QUERY
     # -----------------------------
     resp = query.order("observed_at", desc=True).execute()
-
-    if resp.data is None:
-        st.error("Failed to fetch media.")
-        return
-
     data = resp.data
 
     if not data:
@@ -233,7 +228,7 @@ def browse_page():
     # SELECT MEDIA BY NAME + PROJECT
     # -----------------------------
     select_labels = [f"{row['name']} — {row['project']}" for row in data]
-    label_to_row = {f"{row['name']} — {row['project']}": row for row in data}
+    label_to_row = {label: row for label, row in zip(select_labels, data)}
 
     selected_label = st.selectbox("Select media", select_labels)
     row = label_to_row[selected_label]
@@ -261,13 +256,11 @@ def browse_page():
         observer = st.text_input("Observer", value=row["observer"])
         observed_at = st.date_input(
             "Observation date",
-            value=dt.date.fromisoformat(str(row["observed_at"])[:10]),
+            value=dt.date.fromisoformat(row["observed_at"])
         )
         location = st.text_input("Location", value=row["location"])
         project = st.text_input("Project", value=row["project"])
-        description = st.text_area(
-            "Description", value=row.get("description") or "", height=100
-        )
+        description = st.text_area("Description", value=row.get("description") or "")
 
         if st.button("Save changes"):
             if not name.strip():
@@ -283,24 +276,19 @@ def browse_page():
                 "description": description,
             }
 
-            resp = (
-                supabase.table("video_observations")
-                .update(update_data)
-                .eq("id", row["id"])
+            supabase.table("video_observations") \
+                .update(update_data) \
+                .eq("id", row["id"]) \
                 .execute()
-            )
 
-            if resp.data is None:
-                st.error("Update failed.")
-            else:
-                st.success("Metadata updated.")
-                st.rerun()
+            st.success("Metadata updated.")
+            st.rerun()
 
     # -----------------------------
     # DELETE MEDIA (SAFE)
     # -----------------------------
     st.markdown("---")
-    st.markdown("### Delete this media")
+    st.subheader("Delete this media")
 
     if st.button("Delete media"):
         st.session_state["confirm_delete"] = True
@@ -315,19 +303,15 @@ def browse_page():
                 st.error(f"Storage delete failed: {e}")
                 return
 
-            resp = (
-                supabase.table("video_observations")
-                .delete()
-                .eq("id", row["id"])
+            supabase.table("video_observations") \
+                .delete() \
+                .eq("id", row["id"]) \
                 .execute()
-            )
 
-            if resp.data is None:
-                st.error("Delete failed.")
-            else:
-                st.success("Media deleted.")
-                st.session_state["confirm_delete"] = False
-                st.rerun()
+            st.success("Media deleted.")
+            st.session_state["confirm_delete"] = False
+            st.rerun()
+
 
 
 
