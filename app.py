@@ -21,7 +21,7 @@ supabase = get_supabase_client()
 
 st.set_page_config(page_title="Video SMP", layout="wide")
 
-PAGES = ["Upload videos", "Browse & manage videos"]
+PAGES = ["Upload medias", "Browse & manage medias"]
 page = st.sidebar.radio("Navigation", PAGES)
 
 
@@ -326,7 +326,7 @@ def browse_page():
 
 # ---------- ROUTER ----------
 
-if page == "Upload videos":
+if page == "Upload medias":
     upload_page()
 else:
     browse_page()
