@@ -58,6 +58,7 @@ def upload_page():
     with st.form("upload_form", clear_on_submit=True):
 
         name = st.text_input("Name (required)")
+        species = st.text_input("Species (required)")
         observer = st.text_input("Observer (required)")
         observed_at = st.date_input("Observation date", dt.date.today())
         location = st.text_input("Location (required)")
@@ -74,6 +75,10 @@ def upload_page():
     # -----------------------------
     if not name.strip():
         st.error("Name is required.")
+        return
+
+    if not species.strip():
+        st.error("Species is required.")
         return
 
     if not file:
@@ -117,6 +122,7 @@ def upload_page():
     # -----------------------------
     data = {
         "name": name.strip(),
+        "species": species.strip(),
         "media_type": media_type.lower(),  # "video" or "audio"
         "storage_path": storage_path,
         "file_name": file.name,
@@ -135,6 +141,7 @@ def upload_page():
 
     st.success(f"{media_type} uploaded successfully!")
     st.rerun()
+
 
 
 
@@ -169,6 +176,7 @@ def browse_page():
     all_projects = sorted({row["project"] for row in all_rows})
     all_locations = sorted({row["location"] for row in all_rows})
     all_observers = sorted({row["observer"] for row in all_rows})
+    all_species = sorted({row["species"] for row in all_rows})
 
     # -----------------------------
     # FILTERS (MULTISELECT)
@@ -180,6 +188,7 @@ def browse_page():
         project_filter = st.multiselect("Project", all_projects)
         location_filter = st.multiselect("Location", all_locations)
         observer_filter = st.multiselect("Observer", all_observers)
+        species_filter = st.multiselect("Species", all_species)
 
     # -----------------------------
     # BUILD QUERY WITH FILTERS
@@ -203,6 +212,9 @@ def browse_page():
 
     if observer_filter:
         query = query.in_("observer", observer_filter)
+
+    if species_filter:
+        query = query.in_("species", species_filter)
 
     # -----------------------------
     # EXECUTE QUERY
@@ -246,6 +258,7 @@ def browse_page():
     with col_info:
         st.subheader("Details")
         st.write(f"**Name:** {row['name']}")
+        st.write(f"**Species:** {row['species']}")
         st.write(f"**Observer:** {row['observer']}")
         st.write(f"**Location:** {row['location']}")
         st.write(f"**Project:** {row['project']}")
@@ -259,6 +272,7 @@ def browse_page():
     with st.expander("Edit metadata", expanded=False):
 
         name = st.text_input("Name (required)", value=row["name"])
+        species = st.text_input("Species", value=row["species"])
         observer = st.text_input("Observer", value=row["observer"])
         observed_at = st.date_input(
             "Observation date",
@@ -275,6 +289,7 @@ def browse_page():
 
             update_data = {
                 "name": name.strip(),
+                "species": species.strip(),
                 "observer": observer,
                 "observed_at": observed_at.isoformat(),
                 "location": location,
@@ -317,6 +332,7 @@ def browse_page():
             st.success("Media deleted.")
             st.session_state["confirm_delete"] = False
             st.rerun()
+
 
 
 
