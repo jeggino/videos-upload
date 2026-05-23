@@ -241,7 +241,7 @@ def browse_page():
     col_media, col_info = st.columns([2, 1])
 
     # Determine bucket
-    bucket = BUCKET_NAME if row["media_type"] == "video" else "callings"
+    bucket = VIDEO_BUCKET_NAME if row["media_type"] == "video" else "callings"
 
     # LEFT COLUMN: VIDEO OR AUDIO
     with col_media:
@@ -304,6 +304,35 @@ def browse_page():
 
             st.success("Metadata updated.")
             st.rerun()
+
+    # -----------------------------
+    # DELETE MEDIA (SAFE)
+    # -----------------------------
+    st.markdown("---")
+    st.subheader("Delete this media")
+
+    if st.button("Delete media"):
+        st.session_state["confirm_delete"] = True
+
+    if st.session_state.get("confirm_delete", False):
+        st.warning("This action is permanent. Click below to confirm deletion.")
+
+        if st.button("YES, delete permanently"):
+            try:
+                supabase.storage.from_(bucket).remove([row["storage_path"]])
+            except Exception as e:
+                st.error(f"Storage delete failed: {e}")
+                return
+
+            supabase.table("video_observations") \
+                .delete() \
+                .eq("id", row["id"]) \
+                .execute()
+
+            st.success("Media deleted.")
+            st.session_state["confirm_delete"] = False
+            st.rerun()
+
 
     # -----------------------------
     # DELETE MEDIA (SAFE)
