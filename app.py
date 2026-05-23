@@ -156,9 +156,16 @@ def browse_page():
     # -----------------------------
     # FETCH ALL DATA FIRST (for filters)
     # -----------------------------
-    all_rows = supabase.table("video_observations").select("*").execute().data or []
+    all_rows = (
+        supabase.table("video_observations")
+        .select("*")
+        .eq("media_type", media_choice.lower())
+        .execute()
+        .data
+        or []
+    )
 
-    # Build unique filter lists
+    # Build unique filter lists based on media type
     all_projects = sorted({row["project"] for row in all_rows})
     all_locations = sorted({row["location"] for row in all_rows})
     all_observers = sorted({row["observer"] for row in all_rows})
@@ -177,10 +184,11 @@ def browse_page():
     # -----------------------------
     # BUILD QUERY WITH FILTERS
     # -----------------------------
-    query = supabase.table("video_observations").select("*")
-
-    # Media type
-    query = query.eq("media_type", media_choice.lower())
+    query = (
+        supabase.table("video_observations")
+        .select("*")
+        .eq("media_type", media_choice.lower())
+    )
 
     # Name contains
     if name_filter.strip():
@@ -216,18 +224,34 @@ def browse_page():
     row = label_to_row[selected_label]
 
     # -----------------------------
-    # PREVIEW (VIDEO OR AUDIO)
+    # PREVIEW + DESCRIPTION LAYOUT (2/1)
     # -----------------------------
-    bucket = BUCKET_NAME if row["media_type"] == "video" else "callings"
+    col_media, col_info = st.columns([2, 1])
 
-    try:
-        url = supabase.storage.from_(bucket).get_public_url(row["storage_path"])
-        if row["media_type"] == "video":
-            st.video(url)
-        else:
-            st.audio(url)
-    except Exception:
-        st.info("Preview not available.")
+    # Determine bucket
+    bucket = VIDEO_BUCKET_NAME if row["media_type"] == "video" else "callings"
+
+    # LEFT COLUMN: VIDEO OR AUDIO
+    with col_media:
+        try:
+            url = supabase.storage.from_(bucket).get_public_url(row["storage_path"])
+            if row["media_type"] == "video":
+                st.video(url)
+            else:
+                st.audio(url)
+        except Exception:
+            st.info("Preview not available.")
+
+    # RIGHT COLUMN: DESCRIPTION + METADATA
+    with col_info:
+        st.subheader("Details")
+        st.write(f"**Name:** {row['name']}")
+        st.write(f"**Observer:** {row['observer']}")
+        st.write(f"**Location:** {row['location']}")
+        st.write(f"**Project:** {row['project']}")
+        st.write(f"**Date:** {row['observed_at']}")
+        st.write("**Description:**")
+        st.write(row.get("description") or "_No description_")
 
     # -----------------------------
     # EDIT METADATA
@@ -293,6 +317,7 @@ def browse_page():
             st.success("Media deleted.")
             st.session_state["confirm_delete"] = False
             st.rerun()
+
 
 
 
