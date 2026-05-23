@@ -9,7 +9,7 @@ from supabase import create_client, Client
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-BUCKET_NAME = "video-smp"
+VIDEO_BUCKET_NAME = "video-smp"
 
 
 @st.cache_resource
